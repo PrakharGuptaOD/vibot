@@ -140,7 +140,7 @@ class VCControlPanel(discord.ui.View):
 class VCGenerator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.JOIN_TO_CREATE_VC_ID = 1469566597298524252 
+        self.JOIN_TO_CREATE_VC_ID = 1468815961275498547 
         
         # --- NEW: Target Category ID ---
         # Add the ID of the category where you want the new rooms to be created
@@ -195,25 +195,36 @@ class VCGenerator(commands.Cog):
             )
 
         # 2. CLEANUP & AUTO-TRANSFER ON LEAVE
-        if before.channel and before.channel.id in self.active_temp_vcs:
-            if len(before.channel.members) == 0:
-                del self.active_temp_vcs[before.channel.id]
-                await before.channel.delete(reason="Breakout room empty")
+        # FIX: Ensure user actually changed channels or disconnected, ignoring mute/deafen events.
+        if before.channel and before.channel != after.channel:
             
-            elif member.id == self.active_temp_vcs[before.channel.id]:
-                new_owner = None
+            is_tracked = before.channel.id in self.active_temp_vcs
+            is_breakout_category = before.channel.category and before.channel.category.id == self.TARGET_CATEGORY_ID
+
+            # FIX: Clean up zombie channels even if bot forgot about them, as long as they are empty and in the right category.
+            if is_tracked or is_breakout_category:
                 
-                for m in before.channel.members:
-                    if not m.bot:
-                        new_owner = m
-                        break
+                # Agar channel poora khaali ho gaya hai
+                if len(before.channel.members) == 0:
+                    if is_tracked:
+                        del self.active_temp_vcs[before.channel.id]
+                    await before.channel.delete(reason="Breakout room empty")
                 
-                if new_owner:
-                    self.active_temp_vcs[before.channel.id] = new_owner.id
-                    await before.channel.send(f"👑 **{member.display_name}** left. Ownership has automatically been transferred to {new_owner.mention}.")
-                else:
-                    del self.active_temp_vcs[before.channel.id]
-                    await before.channel.delete(reason="Only bots remained in breakout room")
+                # Agar sirf owner ne leave kiya hai (aur log abhi bhi hain)
+                elif is_tracked and member.id == self.active_temp_vcs[before.channel.id]:
+                    new_owner = None
+                    
+                    for m in before.channel.members:
+                        if not m.bot:
+                            new_owner = m
+                            break
+                    
+                    if new_owner:
+                        self.active_temp_vcs[before.channel.id] = new_owner.id
+                        await before.channel.send(f"👑 **{member.display_name}** left. Ownership has automatically been transferred to {new_owner.mention}.")
+                    else:
+                        del self.active_temp_vcs[before.channel.id]
+                        await before.channel.delete(reason="Only bots remained in breakout room")
 
 async def setup(bot):
     await bot.add_cog(VCGenerator(bot))
